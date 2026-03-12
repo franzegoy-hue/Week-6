@@ -1,0 +1,138 @@
+#define BLYNK_PRINT Serial
+#define BLYNK_TEMPLATE_ID "TMPL6zUn1P_Uy"
+#define BLYNK_TEMPLATE_NAME "week 6"
+#define BLYNK_AUTH_TOKEN "iz1thyhMwlEavOSCHSmyS2InGc-7Lrd1"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <ESP32Servo.h>
+#include <Stepper.h>
+
+// WiFi
+char ssid[] = "PISO WIFI PASSWORD";
+char pass[] = "123123123";
+
+// Ultrasonic
+#define TRIG_PIN 5
+#define ECHO_PIN 18
+
+// LED
+#define LED_PIN 4
+#define DIST_THRESHOLD 20  // cm
+
+// LCD
+LiquidCrystal_I2C lcd(0x27,16,2);
+
+// Servos
+Servo servo1;
+Servo servo2;
+#define SERVO1_PIN 19
+#define SERVO2_PIN 23
+
+// Stepper
+#define STEPS 2048
+Stepper stepper(STEPS, 13, 12, 14, 27);
+
+BlynkTimer timer;
+
+// -------- ULTRASONIC + LED + LCD + AUTO SERVOS --------
+void sendSensor()
+{
+  // Trigger ultrasonic
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // Read echo
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  float distance = duration * 0.034 / 2;
+
+  int ledState = 0;
+
+  // Object detection
+  if(distance <= DIST_THRESHOLD && distance > 0)
+  {
+    digitalWrite(LED_PIN, HIGH);
+    ledState = 1;
+
+    // Move servos automatically
+    servo1.write(90);  // example: open
+    servo2.write(90);
+  }
+  else
+  {
+    digitalWrite(LED_PIN, LOW);
+    ledState = 0;
+
+    // Move servos back to initial position
+    servo1.write(0);   // example: closed
+    servo2.write(0);
+  }
+
+  // Send to Blynk
+  Blynk.virtualWrite(V0, distance);  // distance
+  Blynk.virtualWrite(V1, ledState);  // LED ON/OFF
+
+  // LCD display
+  lcd.setCursor(0,0);
+  lcd.print("Distance:      ");
+  lcd.setCursor(0,0);
+  lcd.print(distance);
+  lcd.print(" cm");
+
+  lcd.setCursor(0,1);
+  if(ledState)
+    lcd.print("Object Detected");
+  else
+    lcd.print("No Object      ");
+
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.print(" cm  LED: ");
+  Serial.println(ledState);
+}
+
+// -------- STEPPER CONTROL --------
+BLYNK_WRITE(V4)
+{
+  int steps = param.asInt();
+  stepper.step(steps);
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  Wire.begin(21,22); // LCD I2C
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+
+  // LCD
+  lcd.init();
+  lcd.backlight();
+
+  // Servos
+  servo1.attach(SERVO1_PIN);
+  servo2.attach(SERVO2_PIN);
+
+  // Stepper
+  stepper.setSpeed(10);
+
+  // Blynk
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  // Timer: read ultrasonic every 2s
+  timer.setInterval(2000L, sendSensor);
+}
+
+void loop()
+{
+  Blynk.run();
+  timer.run();
+}
